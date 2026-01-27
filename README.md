@@ -1,95 +1,84 @@
-## Description
+# NestJS - Backend Journey
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+A professional, scalable backend for React Native applications built with NestJS. This repository documents the journey from a basic "Hello World" to a high-performance video streaming backend.
 
-## Project setup
+## 📅 Day 1: Architecture & Foundation
 
-```bash
-$ pnpm install
+**Goal:** Master the "NestJS Way" (Modules, Controllers, Services), build a robust standardized REST API, and implement solid validation and error handling without a database.
+
+### 🚀 Key Achievements
+
+- **Architecture Setup:** Scaffolded a modular monolithic structure using the Nest CLI.
+- **CRUD Implementation:** Built a fully functional `Tasks` resource with Create, Read, Update, Delete operations using in-memory storage.
+- **Dependency Injection (DI):** Mastered how Modules, Controllers, and Services wire together automatically.
+- **Strict Validation:** Implemented DTOs (Data Transfer Objects) with `class-validator` to protect the API from bad data.
+- **UUIDs:** Switched from numeric IDs to UUIDs (Strings) for better security and distributed system compatibility.
+- **Standardized Responses:**
+  - **Success:** Automatically wraps all data in a `{ success: true, data: ... }` envelope using a global **Interceptor**.
+  - **Errors:** Automatically catches all exceptions and formats them into a `{ success: false, error: ... }` structure using a global **Filter**.
+- **Logging:** Implemented a custom Logging Interceptor to benchmark request duration.
+- **Configuration:** Set up `@nestjs/config` for environment variables and enabled CORS.
+
+---
+
+### 🛠️ Tech Stack & Dependencies
+
+- **Runtime:** Node.js
+- **Framework:** NestJS
+- **Language:** TypeScript
+
+#### Core Libraries Explained
+
+- **`@nestjs/common`**: Contains the decorators you will use every day (`@Controller`, `@Get`, `@Module`, `@Injectable`). It's the "syntax" of Nest.
+- **`@nestjs/core`**: The internal runtime that handles Dependency Injection (DI) and lifecycle hooks. It’s the "brain."
+- **`@nestjs/platform-express`**:
+  - _Crucial Concept:_ NestJS is an abstraction layer. It doesn't handle HTTP requests itself; it hands them off to a lower-level HTTP server. By default, it uses Express.
+  - _React Native Analogy:_ Just as React Native wraps iOS/Android UI components, NestJS wraps Express (or Fastify). You write Nest code, and it translates that into Express handlers under the hood.
+- **`reflect-metadata`**: The "Magic Glue."
+  - TypeScript normally erases types when it compiles to JS. This library allows NestJS to "see" your types at runtime.
+  - _Example:_ When you write `constructor(private service: TaskService)`, this library tells Nest: "Hey, he wants an instance of TaskService here." Without this, Dependency Injection breaks.
+- **`rxjs`**: A library for reactive programming (Streams). Nest uses this heavily for handling asynchronous flows, especially in Interceptors and Microservices.
+
+#### Utilities
+
+- **`class-validator` & `class-transformer`**: Decorator-based validation for DTOs (e.g., `@IsString()`, `@IsNotEmpty()`).
+- **`@nestjs/config`**: Manages environment variables (`.env`) safely.
+- **`uuid`**: Generates unique string identifiers for resources.
+
+---
+
+### 📂 Key Project Structure
+
+```text
+src/
+├── common/                     # Shared logic (The "Glue")
+│   ├── filters/
+│   │   └── http-exception.filter.ts  # Standardizes Error Responses (400, 404, 500)
+│   ├── helpers/
+│   │   └── api-response.helper.ts    # Single Source of Truth for JSON structure
+│   └── interceptors/
+│       ├── logging.interceptor.ts    # Logs request duration (Benchmarking)
+│       └── transform.interceptor.ts  # Wraps Success Responses (200 OK)
+├── tasks/                      # 'Tasks' Feature Module
+│   ├── dto/                    # Data Transfer Objects (Input Validation)
+│   ├── entities/               # Data Models
+│   ├── tasks.controller.ts     # Handles HTTP Requests (Routing)
+│   ├── tasks.module.ts         # Bundles the feature
+│   ├── tasks.service.ts        # Business Logic (CRUD)
+│   └── tasks.controller.spec.ts # Unit Tests
+├── app.module.ts               # Root Module (Config & Imports)
+└── main.ts                     # Entry Point (Global Pipes, CORS, App Start)
 ```
 
-## Compile and run the project
+### 🧠 Concepts Mastered
 
-```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Dependencies
-
-- @nestjs/common: Contains the decorators you will use every day (@Controller, @Get, @Module, @Injectable). It's the "syntax" of Nest.
-
-- @nestjs/core: The internal runtime that handles Dependency Injection (DI) and lifecycle hooks. It’s the "brain."
-
-- @nestjs/platform-express: Crucial Concept: NestJS is an abstraction layer. It doesn't handle HTTP requests itself; it hands them off to a lower-level HTTP server.
-
-  By default, it uses Express.
-
-  React Native Analogy: Just as React Native wraps iOS/Android UI components, NestJS wraps Express (or Fastify). You write Nest code, and it translates that into Express handlers under the hood.
-
-- reflect-metadata: This is the "Magic Glue."
-
-  TypeScript normally erases types when it compiles to JS. This library allows NestJS to "see" your types at runtime.
-
-  Example: When you write constructor(private service: TaskService), this library tells Nest: "Hey, he wants an instance of TaskService here." Without this, Dependency Injection breaks.
-
-- rxjs: A library for reactive programming (Streams). Nest uses this heavily for handling asynchronous flows, especially in Interceptors and Microservices.
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+1.  **Request Lifecycle:**
+    - `Request` ➔ `Middleware` ➔ `Guards` ➔ `Interceptors (Pre)` ➔ `Pipes (Validation)` ➔ **Controller** ➔ **Service** ➔ `Interceptors (Post)` ➔ `Exception Filters` ➔ `Response`
+2.  **DTOs (Data Transfer Objects):**
+    - Defining the exact shape of data expected from the frontend to prevent pollution and ensure type safety.
+3.  **Global Pipes:**
+    - Using `ValidationPipe` globally to automatically reject invalid requests with `400 Bad Request` before they reach the controller.
+4.  **Separation of Concerns:**
+    - **Controllers** only handle routing and HTTP.
+    - **Services** only handle logic and data.
+    - **Interceptors/Filters** only handle response formatting.
