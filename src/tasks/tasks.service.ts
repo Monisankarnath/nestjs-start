@@ -2,44 +2,47 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { Task } from './entities/task.entity';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 
 @Injectable()
 export class TasksService {
-  private tasks: Task[] = [];
+  constructor(
+    @InjectRepository(Task)
+    private readonly taskRepository: Repository<Task>,
+  ) {}
 
-  create(createTaskDto: CreateTaskDto) {
-    const task: Task = {
-      id: crypto.randomUUID(),
+  async create(createTaskDto: CreateTaskDto) {
+    const task: Task = this.taskRepository.create({
       ...createTaskDto,
       status: 'OPEN',
-    };
-    this.tasks.push(task);
-    return task;
+    });
+    return await this.taskRepository.save(task);
   }
 
-  findAll() {
-    return this.tasks;
+  async findAll() {
+    return await this.taskRepository.find();
   }
 
-  findOne(id: string) {
-    const task = this.tasks.find((t) => t.id === id);
+  async findOne(id: string) {
+    const task = await this.taskRepository.findOne({ where: { id } });
     if (!task) {
       throw new NotFoundException(`Task with id ${id} not found`);
     }
     return task;
   }
 
-  update(id: string, updateTaskDto: UpdateTaskDto) {
-    const task = this.findOne(id);
-    const index = this.tasks.findIndex((t) => t.id === id);
-    const updatedTask = { ...task, ...updateTaskDto };
-    this.tasks[index] = updatedTask;
-    return updatedTask;
+  async update(id: string, updateTaskDto: UpdateTaskDto) {
+    const task = await this.findOne(id);
+    const updatedTask = this.taskRepository.merge(task, updateTaskDto);
+    return await this.taskRepository.save(updatedTask);
   }
 
-  remove(id: string) {
-    const task = this.findOne(id);
-    this.tasks = this.tasks.filter((t) => t.id !== task.id);
-    return null;
+  async remove(id: string): Promise<void> {
+    const result = await this.taskRepository.delete(id);
+    if (result.affected === 0) {
+      throw new NotFoundException(`Task with id ${id} not found`);
+    }
+    return;
   }
 }

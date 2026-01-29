@@ -28,7 +28,7 @@ export class TasksController {
   @Get()
   findAll() {
     this.logger.log(
-      `Getting all tasks, length: ${this.tasksService.findAll().length}`,
+      `Getting all tasks, length: ${this.tasksService.findAll()}`,
     );
     return this.tasksService.findAll();
   }
