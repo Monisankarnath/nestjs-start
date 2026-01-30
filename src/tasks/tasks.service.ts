@@ -4,6 +4,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { Task } from './entities/task.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { User } from 'src/users/entities/user.entity';
 
 @Injectable()
 export class TasksService {
@@ -16,12 +17,13 @@ export class TasksService {
     const task: Task = this.taskRepository.create({
       ...createTaskDto,
       status: 'OPEN',
+      user: { id: createTaskDto.userId } as User,
     });
     return await this.taskRepository.save(task);
   }
 
   async findAll() {
-    return await this.taskRepository.find();
+    return await this.taskRepository.find({ relations: ['user'] });
   }
 
   async findOne(id: string) {

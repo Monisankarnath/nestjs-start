@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class CreateTaskDto {
   @IsString()
@@ -8,4 +8,8 @@ export class CreateTaskDto {
   @IsString()
   @MinLength(5, { message: 'Description is too short!' })
   description: string;
+
+  @IsNotEmpty()
+  @IsUUID()
+  userId: string;
 }
