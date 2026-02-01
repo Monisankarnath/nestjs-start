@@ -184,3 +184,103 @@ Since the Database (Postgres) and File Storage (Supabase) are separate systems, 
 Traditional JSON DTOs fail with file uploads because data arrives as strings.
 
 We used `@Transform(({ value }) => ...)` to parse metadata strings into arrays/objects before validation logic checks them.
+
+---
+
+## 📅 Day 3: Security, Authentication & Authorization
+
+**Goal:** Transform the public API into a secure fortress. Implement Stateless Authentication using JWTs (JSON Web Tokens), secure passwords with Bcrypt Hashing, and enforce Authorization Rules (Ownership) so users can only manage their own data.
+
+### 🚀 Key Achievements
+
+- **JWT Authentication System:** Built a complete login flow where users exchange credentials (email/password) for a digital "Access Token."
+- **Password Security:**
+  - Implemented Hashing using bcrypt (Salt + Hash) to ensure passwords are never stored as plain text.
+  - Configured the User entity to automatically hide the password column (`select: false`) from API responses to prevent accidental leaks.
+- **Passport Integration:** Integrated `@nestjs/passport` and `passport-jwt` to handle the heavy lifting of token extraction and verification.
+- **Route Protection (Guards):** Applied `@UseGuards(AuthGuard('jwt'))` to lock down endpoints (Create/Delete Posts) so only logged-in users can access them.
+- **Custom Decorators:** Created a type-safe `@GetUser()` decorator to extract user data from the request cleanly, replacing messy `req.user` calls.
+- **Authorization (Ownership):** Implemented logic to ensure User A cannot delete User B's posts, returning 403 Forbidden if attempted.
+- **Advanced TypeORM Querying:** Solved a critical bug by using `createQueryBuilder` (or specific select options) to fetch hidden columns (passwords) only when needed for authentication.
+
+### 🛠️ Tech Stack & Dependencies
+
+- **Authentication Strategy:** JWT (Stateless)
+- **Encryption:** Bcrypt
+- **Middleware:** Passport.js
+
+#### Core Libraries Explained
+
+- **`bcrypt`:** The industry standard for hashing passwords. It is slow by design to prevent "Brute Force" attacks.
+  - **Key Concept:** It generates a random "Salt" for every user, so even if two users have the same password (e.g. "password123"), their hashes look completely different.
+- **`@nestjs/jwt`:** A helper module that signs (creates) and verifies tokens using a `JWT_SECRET`.
+- **`passport` & `passport-jwt`:**
+  - **Strategy Pattern:** Passport uses "Strategies" to handle different login types (Google, Facebook, JWT, Local). We implemented the JWT Strategy.
+  - It automatically checks the HTTP Header `Authorization: Bearer <token>`, verifies the signature, checks expiration, and attaches the user to `req.user`.
+
+### 📂 Key Project Structure Updates
+
+We expanded the structure to include authentication and authorization.
+
+```text
+src/
+├── auth/                       # 🆕 The Security Module
+│   ├── dto/
+│   │   └── login.dto.ts        # Validation for Login
+│   ├── auth.controller.ts     # Endpoints (Login/Signup)
+│   ├── auth.module.ts         # Bundles JwtModule & Passport
+│   ├── auth.service.ts        # Logic (Validate User, Sign Token)
+│   └── jwt.strategy.ts        # The "Bouncer" (Validates Token)
+├── common/
+│   └── decorators/
+│       └── get-user.decorator.ts # 🆕 Custom @GetUser() utility
+├── users/
+│   └── users.service.ts       # Updated with Hashing & findOneByUsername
+└── posts/
+    ├── posts.controller.ts    # Protected with @UseGuards
+    └── posts.service.ts       # Added Ownership Logic (Delete)
+```
+
+### 🧠 Concepts Mastered
+
+**1. Authentication vs. Authorization**
+
+- **Authentication (Who are you?):** Verified by the JWT.
+  - _Example:_ "I am User ID 5." (Handled by AuthGuard).
+- **Authorization (What can you do?):** Verified by Business Logic.
+  - _Example:_ "User 5 is trying to delete Post 100. Does Post 100 belong to User 5?" (Handled in PostsService).
+
+**2. The JWT Flow**
+
+- **Client:** Sends Username + Password.
+- **Server:** Hashes password, compares with DB. If match → Signs a JSON object (e.g. `{ sub: userId }`) with a Secret Key.
+- **Client:** Stores the Token.
+- **Future Requests:** Client sends Token in Header. Server verifies signature.
+
+**3. Custom Decorators**
+
+Instead of writing fragile code like:
+
+```typescript
+const userId = req.user.userId; // Not type-safe, messy
+```
+
+We created a reusable decorator:
+
+```typescript
+create(@GetUser('userId') userId: string) // Clean, readable
+```
+
+**4. Handling "Hidden" Columns**
+
+We learned that setting `@Column({ select: false })` on the password field is great for security but tricky for Login.
+
+**The Fix:** You must explicitly ask for the password during login.
+
+```typescript
+// The "Login" Query
+this.repo.findOne({
+  where: { username },
+  select: ['id', 'username', 'password'], // Force inclusion
+});
+```
