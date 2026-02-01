@@ -8,21 +8,27 @@ import {
   MaxFileSizeValidator,
   FileTypeValidator,
   Get,
+  UseGuards,
+  Request,
+  Param,
+  Delete,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
+import { AuthGuard } from '@nestjs/passport';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   @Post()
+  @UseGuards(AuthGuard('jwt'))
   @UseInterceptors(FileInterceptor('file'))
   create(
     @Body() createPostDto: CreatePostDto,
-
-    // Strict File Validation
+    @GetUser('userId') userId: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -33,13 +39,17 @@ export class PostsController {
     )
     file: Express.Multer.File,
   ) {
-    const userId = 'b3240264-6d8f-462b-bd2a-7eb9395704fd';
-
     return this.postsService.create(createPostDto, userId, file);
   }
 
   @Get()
   findAll() {
     return this.postsService.findAll();
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard('jwt'))
+  remove(@Param('id') id: string, @GetUser('userId') userId: string) {
+    return this.postsService.remove(id, userId);
   }
 }

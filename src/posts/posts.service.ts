@@ -2,6 +2,8 @@ import {
   Injectable,
   InternalServerErrorException,
   BadRequestException,
+  ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
@@ -163,5 +165,34 @@ export class PostsService {
       relations: ['user', 'tags', 'comments'], // Load relations you need
       order: { createdAt: 'DESC' }, // Good practice: Show newest first
     });
+  }
+
+  async remove(id: string, userId: string) {
+    // 1. Find the post (and the author)
+    const post = await this.postRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+
+    if (!post) throw new NotFoundException('Post not found');
+
+    // 2. CHECK OWNERSHIP 🛡️
+    // Is the person requesting (userId) the same as the author (post.user.id)?
+    if (post.user.id !== userId) {
+      throw new ForbiddenException('You can only delete your own posts');
+    }
+
+    // 3. Delete file from Supabase (Cleanup)
+    // Extract the path from the URL to delete it from storage bucket
+    // URL: https://xyz.supabase.co/.../public/posts/USER_ID/FILENAME.png
+    const fileName = post.url.split('/').pop(); // Gets 'FILENAME.png'
+    if (fileName) {
+      await this.supabase.storage
+        .from(this.configService.get<string>('SUPABASE_BUCKET') ?? '')
+        .remove([`${userId}/${fileName}`]);
+    }
+
+    // 4. Delete from DB
+    return this.postRepository.remove(post);
   }
 }

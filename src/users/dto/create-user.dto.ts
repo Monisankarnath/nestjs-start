@@ -6,6 +6,6 @@ export class CreateUserDto {
   username: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'Username is required!' })
+  @IsNotEmpty({ message: 'Password is required!' })
   password: string;
 }

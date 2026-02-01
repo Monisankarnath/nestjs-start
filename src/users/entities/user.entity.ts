@@ -9,7 +9,7 @@ export class User {
   id: string;
   @Column({ unique: true })
   username: string;
-  @Column()
+  @Column({ select: false })
   password: string;
 
   @OneToMany(() => Post, (post) => post.user)
