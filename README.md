@@ -82,3 +82,105 @@ src/
     - **Controllers** only handle routing and HTTP.
     - **Services** only handle logic and data.
     - **Interceptors/Filters** only handle response formatting.
+
+---
+
+## 📅 Day 2: Advanced Database & Relational Modeling
+
+**Goal:** Transition from in-memory storage to a production-grade Relational Database (PostgreSQL). Master TypeORM for complex data relationships, implement ACID Transactions for data integrity, handle File Uploads with cloud storage (Supabase), and optimize for Performance (Indexing & Denormalization).
+
+### 🚀 Key Achievements
+
+- **Database Integration:** Successfully connected NestJS to a PostgreSQL database hosted on Supabase via Docker/Cloud.
+- **Relational Modeling (The 5-Table Schema):** Designed and implemented a complex social graph:
+  - **One-to-Many (1:N):** User ↔ Posts, User ↔ Comments.
+  - **Many-to-Many (M:N):** Posts ↔ Tags (using a hidden Pivot Table).
+  - **Unique Constraints:** Implemented "One Like per User per Post" enforcement at the database level.
+- **ACID Transactions:** Implemented manual transaction management using QueryRunner to ensure atomicity (e.g., creating a post and updating user stats simultaneously).
+- **Saga Pattern (Error Compensation):** Built a "Rollback" mechanism for File Uploads. If the Database insert fails, the file is automatically deleted from Cloud Storage to prevent "Ghost Files."
+- **Performance Optimization:**
+  - **Indexing:** Applied `@Index()` on frequently searched columns (userId, title) to enforce O(log n) search speeds.
+  - **Denormalization:** Added `postsCount` and `likeCount` columns to avoid expensive `COUNT(*)` queries during reads.
+  - **N+1 Problem Solved:** Used Eager Loading (relations) and QueryBuilder to fetch deep nested data in a single SQL query.
+- **File Uploads:** Handled multipart/form-data uploads with strict validation (File Type & Size) and uploaded them to Supabase Storage.
+
+### 🛠️ Tech Stack & Dependencies
+
+- **Database:** PostgreSQL (via Supabase)
+- **ORM:** TypeORM
+- **Storage:** Supabase Storage (S3-compatible)
+
+#### Core Libraries Explained
+
+- **`@nestjs/typeorm` & `typeorm`:** The Object-Relational Mapper (ORM). It bridges the gap between TypeScript Classes (Entities) and SQL Tables. It handles SQL generation, migrations, and relationship management automatically.
+- **`pg`:** The raw PostgreSQL driver that allows Node.js to talk to the database. TypeORM uses this under the hood.
+- **`@supabase/supabase-js`:** The official SDK for interacting with Supabase Storage (Buckets) and Authentication.
+- **`class-transformer`:**
+  - Used in DTOs to transform incoming data.
+  - **Crucial Use Case:** Converting "comma-separated strings" from multipart/form-data requests into proper Arrays (e.g. `['tech', 'news']`) before validation runs.
+
+### 📂 Key Project Structure
+
+We expanded the monolithic structure to include multiple feature domains.
+
+```text
+src/
+├── app.module.ts               # Database Connection (TypeOrmModule.forRoot)
+├── users/                      # Users Module
+│   └── entities/user.entity.ts # Tracks 'postsCount' (Denormalization)
+├── posts/                      # Posts Module (The Aggregate Root)
+│   ├── entities/
+│   │   ├── post.entity.ts      # Main Entity (@Index, @OneToMany)
+│   │   └── like.entity.ts      # Child Entity (@Unique Constraint)
+│   ├── dto/                    # Handles Validation + Transformation
+│   └── posts.service.ts       # Contains Transaction & Upload Logic
+├── comments/                   # Comments Module
+├── tags/                       # Tags Module
+│   └── entities/tag.entity.ts  # M:N Relation (No array initialization!)
+└── common/                     # Shared Filters/Interceptors (From Day 1)
+```
+
+### 🧠 Concepts Mastered
+
+**1. Relational Mapping Strategy**
+
+We moved beyond simple CRUD to specific architectural patterns:
+
+- **Entities vs. Tables:** Understanding that one Class = One Table.
+- **Dependency Injection for Repositories:** Using `TypeOrmModule.forFeature([Entity])` to inject specific repository tools into a Module's context.
+
+**2. The Transaction Pattern (ACID)**
+
+Code that modifies multiple tables must be atomic.
+
+```typescript
+// The Pattern:
+await queryRunner.startTransaction();
+try {
+  await manager.save(Post); // Operation A
+  await manager.increment(User); // Operation B
+  await queryRunner.commitTransaction();
+} catch {
+  await queryRunner.rollbackTransaction(); // Undo ALL if any fail
+}
+```
+
+**3. The Saga Pattern (Distributed Transactions)**
+
+Since the Database (Postgres) and File Storage (Supabase) are separate systems, they cannot share a database transaction.
+
+- **Strategy:** Perform the irreversible action (Upload) first.
+- **Compensation:** If the transaction fails, trigger a cleanup action (Delete File).
+
+**4. Database Performance Tuning**
+
+- **Indexing (`@Index`):** Creates B-Tree structures for instant lookups on specific columns. Vital for WHERE clauses.
+- **Denormalization:** Storing calculated values (likeCount) on the parent table.
+- **Trade-off:** Slower Writes (need to update 2 tables) ➔ Faster Reads (instant number retrieval).
+- **Avoiding Circular Dependencies:** Using `forwardRef()` or keeping tightly coupled entities (Post + Like) in the same module to prevent architectural loops.
+
+**5. Handling multipart/form-data**
+
+Traditional JSON DTOs fail with file uploads because data arrives as strings.
+
+We used `@Transform(({ value }) => ...)` to parse metadata strings into arrays/objects before validation logic checks them.
