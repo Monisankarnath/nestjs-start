@@ -1,0 +1,167 @@
+import {
+  Injectable,
+  InternalServerErrorException,
+  BadRequestException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { DataSource, Repository } from 'typeorm';
+import { CreatePostDto } from './dto/create-post.dto';
+import { Post } from './entities/post.entity';
+import { User } from '../users/entities/user.entity';
+import { Tag } from '../tags/entities/tag.entity';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { InjectRepository } from '@nestjs/typeorm';
+
+@Injectable()
+export class PostsService {
+  private supabase: SupabaseClient;
+  constructor(
+    @InjectRepository(Post)
+    private readonly postRepository: Repository<Post>,
+    private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+  ) {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') ?? '';
+    const supabaseKey = this.configService.get<string>('SUPABASE_KEY') ?? '';
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('DEBUG SUPABASE URL:', supabaseUrl);
+    console.log(
+      'DEBUG SUPABASE KEY:',
+      supabaseKey ? 'Key exists' : 'Key missing',
+    );
+  }
+  async create(
+    createPostDto: CreatePostDto,
+    userId: string,
+    file: Express.Multer.File,
+  ) {
+    const bucket: string =
+      this.configService.get<string>('SUPABASE_BUCKET') ?? '';
+
+    // 🔍 DEBUG LOG 1: Check Config
+    console.log('--- DEBUG START ---');
+    console.log('Target Bucket:', bucket);
+    console.log('User ID:', userId);
+    console.log('File Size:', file.size);
+
+    // 🔍 DEBUG LOG 2: Test Connection by Listing Buckets
+    // If this fails, your URL or KEY is wrong.
+    const { data: buckets, error: listError } =
+      await this.supabase.storage.listBuckets();
+
+    if (listError) {
+      console.error(
+        '❌ FATAL: Could not list buckets. Check URL/KEY.',
+        listError,
+      );
+      throw new InternalServerErrorException('Supabase Connection Failed');
+    }
+
+    // Check if our bucket is in the list
+    const bucketExists = buckets?.find((b) => b.name === bucket);
+    console.log(
+      '✅ Connection OK. Available Buckets:',
+      buckets?.map((b) => b.name),
+    );
+
+    if (!bucketExists) {
+      console.error(
+        `❌ FATAL: Bucket "${bucket}" does not exist in this Supabase project.`,
+      );
+      throw new InternalServerErrorException(`Bucket ${bucket} not found`);
+    }
+
+    // ---------------------------------------------------
+    // PHASE 1: Upload to Supabase Storage
+    // ---------------------------------------------------
+    const filePath = `${userId}/${Date.now()}-${file.originalname}`;
+
+    const { data: uploadData, error: uploadError } = await this.supabase.storage
+      .from(bucket) // <--- uses the variable we just checked
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('❌ Upload Error Details:', uploadError);
+      throw new BadRequestException(`Upload Failed: ${uploadError.message}`);
+    }
+
+    console.log('✅ Upload Success:', uploadData);
+
+    const {
+      data: { publicUrl },
+    } = this.supabase.storage.from(bucket).getPublicUrl(filePath);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Step A: Handle Tags (Deduping Logic)
+      const tagList: Tag[] = [];
+      if (createPostDto.tags && createPostDto.tags.length > 0) {
+        for (const tagName of createPostDto.tags) {
+          // Check if tag exists (inside transaction)
+          let tag = await queryRunner.manager.findOne(Tag, {
+            where: { name: tagName },
+          });
+          if (!tag) {
+            tag = queryRunner.manager.create(Tag, { name: tagName });
+            tag = await queryRunner.manager.save(tag);
+          }
+          tagList.push(tag);
+        }
+      }
+
+      // Step B: Create Post
+      const post = queryRunner.manager.create(Post, {
+        ...createPostDto,
+        url: publicUrl,
+        user: { id: userId },
+        tags: tagList,
+      });
+      const savedPost = await queryRunner.manager.save(post);
+
+      // Step C: Increment User Count
+      await queryRunner.manager.increment(
+        User,
+        { id: userId },
+        'postsCount',
+        1,
+      );
+
+      // Step D: Commit
+      await queryRunner.commitTransaction();
+
+      return savedPost;
+    } catch (dbError) {
+      // ---------------------------------------------------
+      // PHASE 3: Compensation (Cleanup)
+      // ---------------------------------------------------
+      // The DB failed, so we MUST delete the file we just uploaded.
+      // Otherwise, we have a "Ghost File" costing us money.
+
+      console.error('DB Transaction Failed. Deleting file...', dbError);
+
+      await queryRunner.rollbackTransaction(); // Undo DB changes
+
+      // Delete file from Supabase
+      await this.supabase.storage.from(bucket).remove([filePath]);
+
+      throw new InternalServerErrorException(
+        'Post creation failed, file upload rolled back.',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async findAll() {
+    return await this.postRepository.find({
+      relations: ['user', 'tags', 'comments'], // Load relations you need
+      order: { createdAt: 'DESC' }, // Good practice: Show newest first
+    });
+  }
+}

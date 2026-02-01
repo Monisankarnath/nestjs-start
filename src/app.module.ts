@@ -3,6 +3,9 @@ import { TasksModule } from './tasks/tasks.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module';
+import { TagsModule } from './tags/tags.module';
+import { CommentsModule } from './comments/comments.module';
+import { PostsModule } from './posts/posts.module';
 
 @Module({
   imports: [
@@ -39,6 +42,12 @@ import { UsersModule } from './users/users.module';
     TasksModule,
 
     UsersModule,
+
+    TagsModule,
+
+    CommentsModule,
+
+    PostsModule,
   ],
 })
 export class AppModule {}
