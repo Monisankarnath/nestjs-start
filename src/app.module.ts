@@ -33,7 +33,6 @@ import { ChatModule } from './chat/chat.module';
 
         // SYNC: Creates tables automatically (Use only in Dev!)
         synchronize: true,
-        logging: true,
 
         // SSL: MANDATORY for Supabase/Neon/Cloud
         ssl: {

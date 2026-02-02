@@ -25,11 +25,15 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { StreamService } from './providers/stream.service';
 
 @ApiTags('Posts')
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly postsService: PostsService) {}
+  constructor(
+    private readonly postsService: PostsService,
+    private readonly streamService: StreamService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new post' })
@@ -67,5 +71,21 @@ export class PostsController {
   @UseGuards(AuthGuard('jwt'))
   remove(@Param('id') id: string, @GetUser('userId') userId: string) {
     return this.postsService.remove(id, userId);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a post by ID' })
+  @ApiResponse({ status: 200, description: 'Return the post.' })
+  @ApiResponse({ status: 404, description: 'Post not found.' })
+  async findOne(@Param('id') id: string) {
+    // 1. Get the data for the user (Fast)
+    const post = await this.postsService.findOne(id);
+
+    // 2. Log the analytic (Async / Side Effect)
+    // Notice we don't "await" this strictly if we want the user response to be instant.
+    // However, in Node, it's safer to handle errors.
+    this.streamService.pushLog('anonymous_user', +id);
+
+    return post;
   }
 }

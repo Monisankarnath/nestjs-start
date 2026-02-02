@@ -216,4 +216,8 @@ export class PostsService {
     // 4. Delete from DB
     return this.postRepository.remove(post);
   }
+
+  async findOne(id: string) {
+    return this.postRepository.findOne({ where: { id } });
+  }
 }

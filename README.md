@@ -284,3 +284,130 @@ this.repo.findOne({
   select: ['id', 'username', 'password'], // Force inclusion
 });
 ```
+
+---
+
+## 📘 Day 4: Real-Time Communication & System Architecture
+
+**Goal:** Finish production touches on the REST API, then add real-time communication and a scalable system architecture using WebSockets, Redis, and streaming platforms like Kafka/Kinesis.
+
+### 1. Finishing Touches: Pagination & Documentation
+
+- **Pagination:** Moved from returning all posts to page-based responses (e.g. "page 1, limit 10") using `take` (limit) and `skip` (offset) in TypeORM.
+- **Swagger (OpenAPI):** Automated API documentation using `@nestjs/swagger`.
+  - Decorators: `@ApiTags()`, `@ApiOperation()`, `@ApiResponse()`.
+- **Result:** An interactive UI at `/api` where frontend developers can explore and test endpoints without asking for manual docs.
+
+### 2. WebSockets with Socket.IO
+
+- **REST vs WebSockets:**
+  - REST: Request–Response (Pull).
+  - WebSockets: Event-driven (Push).
+- **The Handshake:** WebSockets start as a normal HTTP request; the client asks to upgrade. On `101 Switching Protocols`, the TCP connection stays open.
+- **Events:** Instead of URLs like `GET /posts`, we use event names like `"sendMessage"` and `"receiveMessage"`.
+- **Socket.IO:** A higher-level framework over WebSockets that adds auto-reconnection, rooms, and acknowledgements.
+
+#### Chat Gateway Implementation
+
+```typescript
+@WebSocketGateway({ cors: true })
+export class ChatGateway {
+  @WebSocketServer()
+  server: Server; // The main radio tower
+
+  // Listening for "joinRoom" event
+  @SubscribeMessage('joinRoom')
+  handleJoinRoom(
+    @MessageBody() roomName: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    client.join(roomName); // Adds socket to a specific channel
+    client.emit('joinedRoom', `Welcome to ${roomName}`);
+  }
+
+  // Listening for "sendToRoom" event
+  @SubscribeMessage('sendToRoom')
+  handleMessage(@MessageBody() data: any) {
+    // Broadcasts ONLY to people in that room
+    this.server.to(data.room).emit('receiveMessage', data.message);
+  }
+}
+```
+
+#### The Three Pillars of Socket.IO
+
+- **Rooms (Privacy):**
+  - Virtual channels that group sockets.
+  - Analogy: Hotel lobby (server) vs private conference room (room).
+  - Code: `client.join('room_id')` / `server.to('room_id').emit(...)`.
+- **Acknowledgements (Reliability):**
+  - Client sends a message and waits for a callback confirming receipt.
+  - Analogy: Read receipts (blue ticks) in WhatsApp.
+- **Adapters (Scaling):**
+  - By default, sockets live in RAM on a single instance.
+  - To scale horizontally, we need a shared "brain" (Redis) via an adapter.
+
+#### Debugging with Postman
+
+- **Common Mistake:** Using "Raw WebSocket" mode.
+- **Fix:** Use "Socket.IO" mode in Postman.
+- **Crucial Lesson:** Clients must listen to specific events. If the server emits `receiveMessage`, the client must have a `receiveMessage` handler or nothing appears.
+
+### 3. Scaling with Redis (The "Shared Brain")
+
+- **Problem:** If User A is connected to Server 1 and User B to Server 2, in-memory sockets cannot talk to each other.
+- **Solution: Redis Pub/Sub**
+  - Use Redis as a high-speed message broker:
+    1. Server 1 receives a message.
+    2. Server 1 publishes it to Redis.
+    3. Redis broadcasts to all subscribed servers.
+    4. Server 2 receives it and forwards it to User B.
+
+#### Redis Internals (Deep Dive)
+
+- **Fire & Forget:** Redis Pub/Sub does not store data. If no one is listening, the message is lost.
+- **Performance:**
+  - Uses a dictionary (`pubsub_channels`) where keys = channel names and values = a linked list of clients.
+  - Lookup is \(O(1)\).
+- **Binary Packing:** Adapters compress JSON into binary (e.g. `msgpack`) before sending to save bandwidth.
+
+#### Redis Adapter Core Logic
+
+```typescript
+// Two connections are needed:
+const pubClient = createClient({ url }); // For publishing (writing)
+const subClient = pubClient.duplicate(); // For subscribing (listening)
+```
+
+### 4. High-Throughput Streams (Kafka & Kinesis)
+
+- **Problem:** Redis Pub/Sub is fast but forgetful. If a logging server crashes, messages are gone.
+- **Need:** Durable, ordered event storage.
+
+#### The Log Abstraction
+
+- **Append-only:** Events are only appended, never mutated.
+- **Ordered:** Events are stored in sequence.
+- **Durable:** Data persists on disk for hours/days/weeks.
+
+#### Kafka vs Kinesis (High-Level)
+
+- **AWS Kinesis Data Streams:**
+  - Managed, serverless model.
+  - Routing: Hash-based (Key → MD5 → Shard).
+  - Storage unit: Shard (throughput-limited).
+- **Apache Kafka:**
+  - Distributed software (self-hosted/Confluent).
+  - Routing: Custom partitioner logic.
+  - Storage unit: Partition (backed by segment files on disk).
+  - Speed secret: Zero-copy I/O (disk → network directly, bypassing user-space copies).
+
+#### When to Use What
+
+- **Redis Pub/Sub:** Live chat, notifications, "who is online" — volatile data.
+- **Streams (Kafka/Kinesis):** Payment logs, analytics, audit trails, replaying history — durable data.
+
+#### Real-World Architecture Examples
+
+- **Chat:** Use WebSockets + Redis for real-time delivery, and send messages to Kafka/Kinesis to persist chat history asynchronously.
+- **Video:** Do not stream raw video bytes through Kafka. Use Kafka for control signals (start/stop/pause) and use UDP/WebRTC or a dedicated media pipeline for the actual video.

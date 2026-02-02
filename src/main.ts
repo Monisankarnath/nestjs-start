@@ -5,6 +5,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { RedisIoAdapter } from './chat/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -48,6 +50,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   // This creates the website at: http://localhost:3000/api
   SwaggerModule.setup('api', app, document);
+  // 🔌 CONNECT CLOUD REDIS
+  const configService = app.get(ConfigService); // 👈 Get ConfigService from the app
+  const redisIoAdapter = new RedisIoAdapter(app, configService);
+  await redisIoAdapter.connectToRedis();
+
+  app.useWebSocketAdapter(redisIoAdapter);
 
   await app.listen(process.env.PORT ?? 3000);
 }
