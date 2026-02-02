@@ -6,13 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Like, Repository } from 'typeorm';
 import { CreatePostDto } from './dto/create-post.dto';
 import { Post } from './entities/post.entity';
 import { User } from '../users/entities/user.entity';
 import { Tag } from '../tags/entities/tag.entity';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { InjectRepository } from '@nestjs/typeorm';
+import { GetPostDto } from './dto/get-posts.dto';
 
 @Injectable()
 export class PostsService {
@@ -160,11 +161,31 @@ export class PostsService {
     }
   }
 
-  async findAll() {
-    return await this.postRepository.find({
-      relations: ['user', 'tags', 'comments'], // Load relations you need
-      order: { createdAt: 'DESC' }, // Good practice: Show newest first
+  async findAll(getPostDto: GetPostDto) {
+    const { page, limit, search } = getPostDto;
+    console.log('--- PAGINATION DEBUG ---');
+    console.log('Page:', page, typeof page); // Should be: 1 'number'
+    console.log('Limit:', limit, typeof limit); // Should be: 2 'number'
+    const skip = ((page ?? 1) - 1) * (limit ?? 10);
+    const whereCondition = search ? { title: Like(`%${search}%`) } : {};
+
+    const [data, total] = await this.postRepository.findAndCount({
+      where: whereCondition,
+      take: limit,
+      skip: skip,
+      // relations: ['user', 'tags', 'comments'],
+      order: { createdAt: 'DESC' },
     });
+    const lastPage = Math.ceil(total / (limit ?? 10));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        lastPage,
+      },
+    };
   }
 
   async remove(id: string, userId: string) {

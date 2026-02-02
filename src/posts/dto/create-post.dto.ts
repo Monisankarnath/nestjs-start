@@ -8,16 +8,30 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PostType } from '../entities/post.entity';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePostDto {
+  @ApiProperty({
+    description: 'The title of the post',
+    example: 'How to use NestJS',
+  })
   @IsNotEmpty()
   @IsString()
   @MaxLength(100)
   title: string;
 
+  @ApiProperty({
+    description: 'The type of the post',
+    example: 'IMAGE',
+  })
   @IsEnum(PostType)
   type: PostType; // 'VIDEO' or 'IMAGE'
 
+  @ApiPropertyOptional({
+    description: 'Comma separated tags',
+    example: 'nestjs, typescript',
+    required: false,
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true }) // Ensures every item inside the array is a string
