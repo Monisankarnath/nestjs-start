@@ -8,12 +8,25 @@ import { CommentsModule } from './comments/comments.module';
 import { PostsModule } from './posts/posts.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
+import { BullModule } from '@nestjs/bullmq';
+import { PayrollModule } from './payroll/payroll.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
     // 1. Load .env file
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        connection: {
+          url: configService.get('REDIS_URL'),
+        },
+      }),
+      inject: [ConfigService],
     }),
 
     // 2. Connect to Database (Async Mode)
@@ -54,6 +67,10 @@ import { ChatModule } from './chat/chat.module';
     AuthModule,
 
     ChatModule,
+
+    MailModule,
+
+    PayrollModule,
   ],
 })
 export class AppModule {}

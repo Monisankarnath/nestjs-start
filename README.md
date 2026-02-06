@@ -411,3 +411,150 @@ const subClient = pubClient.duplicate(); // For subscribing (listening)
 
 - **Chat:** Use WebSockets + Redis for real-time delivery, and send messages to Kafka/Kinesis to persist chat history asynchronously.
 - **Video:** Do not stream raw video bytes through Kafka. Use Kafka for control signals (start/stop/pause) and use UDP/WebRTC or a dedicated media pipeline for the actual video.
+
+---
+
+## 📘 Day 5: Async Architecture, Queues & Big Data
+
+**Goal:** Never block the main thread. Offload heavy or slow tasks (emails, payroll, reports, analytics) to background workers and design for large-scale data processing.
+
+### 1. Local Queue Implementation (BullMQ)
+
+We used **BullMQ**, a Node.js queue library that uses Redis to manage background jobs.
+
+#### 1.1 Producer / Consumer Architecture
+
+- **Producer (API):** Accepts the HTTP request and pushes a small data packet (job) into Redis, then returns immediately.
+- **Queue (Broker):** Redis holds jobs reliably until a worker is ready.
+- **Consumer (Worker):** A separate background process that watches Redis and executes heavy logic when jobs appear.
+
+#### 1.2 Payroll Example
+
+**Step 1: Configuration (`app.module.ts`)**
+
+```typescript
+BullModule.forRootAsync({
+  useFactory: () => ({
+    connection: { url: process.env.REDIS_URL }, // Connects to Redis
+  }),
+});
+```
+
+**Step 2: Producer (`payroll.controller.ts`)**
+
+The controller receives a list of employees and pushes jobs into the queue (often with `addBulk()` for many employees).
+
+```typescript
+await this.payrollQueue.add(
+  'calculate-salary',
+  { employeeId: 101 },
+  {
+    attempts: 3, // Retry up to 3 times
+    backoff: 5000, // Wait 5 seconds between retries
+  },
+);
+```
+
+**Step 3: Consumer (`payroll.processor.ts`)**
+
+```typescript
+@Processor('payroll-queue')
+export class PayrollProcessor extends WorkerHost {
+  async process(job: Job): Promise<any> {
+    // 1. Heavy work
+    console.log(`Processing ${job.data.employeeId}...`);
+    await heavyMathCalculation();
+
+    // 2. Result stored in Redis history
+    return { status: 'paid' };
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job, error: Error) {
+    console.log(`Job ${job.id} failed! Reason: ${error.message}`);
+  }
+}
+```
+
+#### 1.3 BullMQ Internals
+
+BullMQ manages a **state machine** inside Redis, moving jobs through lists:
+
+- **wait:** Queued, waiting for a worker.
+- **active:** Picked up by a worker (locked).
+- **completed:** Finished successfully.
+- **failed:** Finished with an error.
+- **delayed:** Scheduled for the future (e.g., "send email in 24 hours").
+
+### 2. Cloud Queues (AWS SQS)
+
+Redis is powerful but RAM-based. For very large, durable workloads, we use **AWS SQS**.
+
+#### 2.1 Redis vs SQS (High-Level)
+
+- **Storage:**
+  - Redis (BullMQ): In-memory; extremely fast but limited.
+  - SQS: Disk/cloud-backed; virtually unlimited.
+- **Latency:**
+  - Redis: Ultra-low (\<5ms).
+  - SQS: Moderate (~50ms).
+- **Maintenance:**
+  - Redis: You manage the cluster.
+  - SQS: Fully managed (serverless).
+
+Best fit:
+
+- **BullMQ/Redis:** Complex, prioritized, near-real-time jobs.
+- **SQS:** Extremely high-volume, simple "pipe" workloads with strong durability.
+
+#### 2.2 Visibility Timeout
+
+Instead of locks, SQS uses a **Visibility Timeout**:
+
+1. Worker A receives a message → it becomes invisible for X seconds.
+2. If Worker A **finishes** early, it **deletes** the message.
+3. If Worker A **crashes**, the timeout expires and the message becomes visible again for Worker B.
+
+**Rule:** Set Visibility Timeout **greater** than your max job processing time.
+
+#### 2.3 Dead Letter Queue (DLQ)
+
+- Without a DLQ, a "poison pill" message can crash workers in an infinite loop.
+- With a DLQ, after \(N\) failed attempts (e.g., 5), SQS moves that message to a **Dead Letter Queue** for manual inspection.
+
+### 3. Data Warehousing (Handling Big Data)
+
+Postgres is for **apps**; Redshift/Snowflake/BigQuery are for **analytics**.
+
+#### 3.1 OLTP vs OLAP
+
+- **OLTP (Online Transaction Processing):**
+  - DB: Postgres, MySQL.
+  - Layout: Row-oriented.
+  - Strength: Fast single-row `INSERT`/`UPDATE`/`DELETE`.
+  - Weakness: Slow for large aggregations.
+  - Use cases: Orders, profiles, chat messages.
+
+- **OLAP (Online Analytical Processing):**
+  - DB: Redshift, Snowflake, BigQuery.
+  - Layout: Column-oriented.
+  - Strength: Very fast aggregations (sums, averages, group-bys).
+  - Weakness: Poor for frequent single-row updates.
+  - Use cases: Dashboards, reports, long-term metrics.
+
+#### 3.2 ETL Pipeline into Redshift
+
+Because OLAP systems prefer bulk loads, we **never** write directly to Redshift from the API:
+
+1. **API:** Sends events/logs into a streaming service (e.g. Kinesis Firehose).
+2. **Firehose:** Buffers until a threshold (e.g. 5MB).
+3. **S3:** Firehose writes batched JSON/CSV files to S3.
+4. **Redshift:** Uses the `COPY` command to ingest data in bulk.
+
+```sql
+-- Core data engineering command
+COPY analytics_table
+FROM 's3://bucket/data.json'
+IAM_ROLE 'arn:aws:iam::...'
+FORMAT AS JSON 'auto';
+```
