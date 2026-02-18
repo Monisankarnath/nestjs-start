@@ -20,6 +20,14 @@ export enum PostType {
   IMAGE = 'IMAGE',
 }
 
+export enum PostStatus {
+  DRAFT = 'draft',
+  SCHEDULED = 'scheduled',
+  REVIEW = 'review',
+  PUBLISHED = 'published',
+  PROCESSING = 'processing',
+}
+
 @Entity()
 export class Post {
   @PrimaryGeneratedColumn('uuid')
@@ -35,8 +43,27 @@ export class Post {
   })
   type: PostType;
 
+  @Column({ type: 'text', nullable: true })
+  content?: string;
+
   @Column()
   url: string; // URL to S3 or Supabase Storage
+
+  @Column({
+    type: 'enum',
+    enum: PostStatus,
+    default: PostStatus.DRAFT,
+  })
+  status: PostStatus;
+
+  @Column({ type: 'text', nullable: true })
+  slug: string;
+
+  @Column({ type: 'varchar', length: 1024, nullable: true })
+  thumbnailUrl?: string;
+
+  @Column({ type: 'json', nullable: true })
+  metaOptions?: any;
 
   // ⚡ PERFORMANCE: Indexing 'userId'
   // Why? Because we often ask: "Show me all posts by User X"

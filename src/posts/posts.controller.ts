@@ -12,7 +12,9 @@ import {
   Param,
   Delete,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
+import { extname } from 'path';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -24,8 +26,11 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { StreamService } from './providers/stream.service';
+import { CreateVideoPostDto } from './dto/create-video-post.dto';
+import { diskStorage } from 'multer';
 
 @ApiTags('Posts')
 @Controller('posts')
@@ -87,5 +92,54 @@ export class PostsController {
     this.streamService.pushLog('anonymous_user', +id);
 
     return post;
+  }
+
+  @Post('video')
+  @ApiOperation({ summary: 'Upload a video post (Max 50MB)' })
+  @ApiConsumes('multipart/form-data') // 👈 Tells Swagger this endpoint accepts files
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // 1. Storage Configuration: Save to ./uploads/temp folder
+      storage: diskStorage({
+        destination: './uploads/temp',
+        filename: (req, file, callback) => {
+          // Generate unique filename: timestamp-random.mp4
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          callback(null, `${uniqueSuffix}${ext}`);
+        },
+      }),
+      // 2. Constraints (50MB Limit)
+      limits: {
+        fileSize: 50 * 1024 * 1024,
+      },
+      // 3. File Filter (Security: Only MP4/MOV)
+      fileFilter: (req, file, callback) => {
+        if (!file.mimetype.match(/\/(mp4|quicktime|mov)$/)) {
+          return callback(
+            new BadRequestException('Only MP4 and MOV files are allowed!'),
+            false,
+          );
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async createVideoPost(
+    @Body() createVideoDto: CreateVideoPostDto,
+    @UploadedFile() file: Express.Multer.File,
+    // @Req() req: any, // 👈 Unlock this when Auth is ready
+  ) {
+    if (!file) {
+      throw new BadRequestException('Video file is required');
+    }
+
+    console.log('📂 Video uploaded to:', file.path);
+
+    // HARDCODED USER ID for testing (Replace with req.user.id later)
+    const testUserId = '9049e518-0b0a-40b9-8bbd-7b75d06e959f';
+
+    return this.postsService.createVideoPost(createVideoDto, file, testUserId);
   }
 }

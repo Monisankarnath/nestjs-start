@@ -8,12 +8,15 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Like, Repository } from 'typeorm';
 import { CreatePostDto } from './dto/create-post.dto';
-import { Post } from './entities/post.entity';
+import { Post, PostStatus, PostType } from './entities/post.entity';
 import { User } from '../users/entities/user.entity';
 import { Tag } from '../tags/entities/tag.entity';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GetPostDto } from './dto/get-posts.dto';
+import { CreateVideoPostDto } from './dto/create-video-post.dto';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class PostsService {
@@ -23,6 +26,8 @@ export class PostsService {
     private readonly postRepository: Repository<Post>,
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
+    @InjectQueue('video')
+    private readonly videoQueue: Queue,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL') ?? '';
     const supabaseKey = this.configService.get<string>('SUPABASE_KEY') ?? '';
@@ -219,5 +224,38 @@ export class PostsService {
 
   async findOne(id: string) {
     return this.postRepository.findOne({ where: { id } });
+  }
+
+  async createVideoPost(
+    createVideoDto: CreateVideoPostDto,
+    file: Express.Multer.File,
+    userId: string,
+  ) {
+    // 1. Create the new Post Entity
+    // We strictly set the type to VIDEO and status to PROCESSING
+    const newPost = this.postRepository.create({
+      title: createVideoDto.title,
+      content: createVideoDto.content,
+      type: PostType.VIDEO,
+      status: PostStatus.PROCESSING,
+      url: file.path, // Initially, this saves the LOCAL path (uploads/temp/xyz.mp4)
+      thumbnailUrl: '', // Will be updated after transcoding
+      user: { id: userId } as User,
+    });
+
+    // 2. Save to Postgres
+    const savedPost = await this.postRepository.save(newPost);
+
+    // 3. TODO: Trigger Background Job here (Day 6 Part 2)
+    await this.videoQueue.add('transcode', {
+      postId: savedPost.id,
+      file: file,
+    });
+
+    return {
+      message: 'Video upload started. Transcoding in progress.',
+      postId: savedPost.id,
+      status: 'PROCESSING',
+    };
   }
 }
